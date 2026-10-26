@@ -1188,13 +1188,18 @@ async function handleProviderChat(input: {
         : undefined
       const resolvedResetAt = refined.resetAt
         ?? (retryAfterMs === undefined ? undefined : Date.now() + retryAfterMs)
+      // 腾讯国际版也必须使用业务错误分类，不能把请求拒绝一律熔断账号。
+      const buddyFailure = providerId === 'workbuddy'
+        ? classify(upstream.status, text)
+        : undefined
+      const buddyMapped = buddyFailure === undefined ? undefined : mapErrorToPunishment(buddyFailure.kind)
       const failureKind: 'soft' | 'hard' | 'model' | 'breaker' =
         upstream.status === 402
           ? 'hard'
           : upstream.status === 429
             ? refined.dimension
             : 'breaker'
-      await pool
+      if (buddyMapped?.punish !== false) await pool
         .applyFailure({
           uid: picked.uid,
           kind: failureKind,
@@ -1209,7 +1214,9 @@ async function handleProviderChat(input: {
         .catch(() => {})
       // ⚠️ 同上：不原样透传上游状态码（避免把网关故障伪装成客户端的 400）
       lastError = {
-        status: clientStatusFor(upstream.status, 'unknown'),
+        status: buddyFailure?.kind === 'channel_blocked'
+          ? 400
+          : clientStatusFor(upstream.status, buddyFailure?.kind ?? 'unknown'),
         // ⚠️ **续期失败时要把原因一并说明** —— 否则用户只看到上游那句
         // 误导性的错误（如 codearts 的 `IAM authentication Unauthorized`），
         // 会以为账号被封，而真实原因是「凭据缺少续期材料，该重新登录」。
@@ -1219,7 +1226,7 @@ async function handleProviderChat(input: {
             + `（自动续期也失败了：${refreshFailure.slice(0, 200)}）`
           : text.slice(0, 300) || `http=${upstream.status}`,
       }
-      if (!rotate) break
+      if (!(buddyMapped?.rotate ?? rotate)) break
       continue
     }
 

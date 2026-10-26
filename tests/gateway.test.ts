@@ -1318,6 +1318,16 @@ test('🔴 国内版与国际版的 chat 头必须是**两套不同取值**（�
   assert.equal(dom['Authorization'], 'Bearer tok', '只保留 Authorization')
 })
 
+test('国际版 HTTP 拒绝必须按业务分类决定罚号和重试', () => {
+  const src = readFileSync('src/gateway/server.ts', 'utf8')
+  assert.ok(src.includes("? classify(upstream.status, text)"))
+  assert.ok(src.includes("if (buddyMapped?.punish !== false) await pool"))
+  assert.ok(/buddyFailure\?\.kind === 'channel_blocked'\s*\? 400/.test(src))
+  assert.ok(src.includes('buddyMapped?.rotate ?? rotate'))
+  assert.equal(mapErrorToPunishment('channel_blocked').punish, false)
+  assert.equal(mapErrorToPunishment('channel_blocked').rotate, false)
+})
+
 test('🔴 鉴权失败判据必须认 `invalid access token`（正则跨度写窄会导致续期静默失效）', () => {
   // ## 实测缺陷（这是 minimax「用几分钟就永久 401」的真正根因）
   //
