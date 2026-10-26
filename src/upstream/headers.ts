@@ -238,7 +238,13 @@ export function referenceChatHeaders(input: {
   variant?: 'buddy' | 'workbuddy'
 }): HeaderMap {
   const intl = input.variant === 'workbuddy'
+  // 参考实现 2026-10-17 复验：部分账号要求三个非空对话标识头，
+  // 缺少时回 11128 request illegal。每次请求独立生成，不跨请求复用。
+  const conversationId = crypto.randomUUID()
   const headers: HeaderMap = {
+    'X-Conversation-ID': conversationId,
+    'X-Conversation-Request-ID': conversationId,
+    'X-Conversation-Message-ID': conversationId,
     Accept: 'text/event-stream',
     'Content-Type': 'application/json',
     // ⚠️ 与端点一致（参考实现 `buddy-adapter.ts:1969`）

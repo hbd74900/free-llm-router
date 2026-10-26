@@ -1303,11 +1303,18 @@ test('🔴 国内版与国际版的 chat 头必须是**两套不同取值**（�
   assert.equal(dom['X-Product-Code'], 'codebuddy')
   assert.equal(intl['X-Product-Code'], 'workbuddy')
 
-  // ⚠️ 参考实现只发这 11 个（多发的头是 Go 侧口径，国际版端点不认）
+  // 保持最小必要头；参考实现后续复验确认部分账号另需三个对话标识头。
   assert.equal(dom['Accept'], 'text/event-stream', 'Accept 必须精确（不能带 json 偏好）')
   assert.ok(!('Origin' in dom), '⚠️ 不得发 Origin（Go 侧口径，参考实现不发）')
   assert.ok(!('X-Machine-ID' in dom), '⚠️ 不得发 X-Machine-ID')
-  assert.ok(!('X-Conversation-Request-ID' in dom), '⚠️ 不得发 X-Conversation-Request-ID')
+  for (const headers of [dom, intl]) {
+    const id = headers['X-Conversation-ID']
+    assert.ok(typeof id === 'string' && id.length > 0, '对话标识非空')
+    assert.equal(headers['X-Conversation-Request-ID'], id)
+    assert.equal(headers['X-Conversation-Message-ID'], id)
+  }
+  const next = referenceChatHeaders({ uid: 'u', accessToken: 'tok', variant: 'workbuddy' })
+  assert.notEqual(next['X-Conversation-ID'], intl['X-Conversation-ID'], '不同请求不复用标识')
   assert.equal(dom['Authorization'], 'Bearer tok', '只保留 Authorization')
 })
 

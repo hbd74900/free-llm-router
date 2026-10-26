@@ -3116,6 +3116,15 @@ auth server could not be reached`。**不是登录失效**（凭据未变），�
 响应，会明确报 502 `upstream_error` 并附上游原文片段。
 （唯一的例外是**只调用工具**的响应 —— 那时正文本来就是空的。）
 
+### 9.21 对话标识头兼容修正（2026-10-26）
+
+指定国际版模型实测返回 `11128 request illegal`。重新核对参考实现 master 的
+`src/buddy-adapter.ts`：2026-10-17 的复验已更正早期「不应发送对话头」结论，
+部分账号要求三个非空对话标识头；缺少任一可能返回该错误。
+共享 `referenceChatHeaders` 每次生成新的 UUID，同时发送 `X-Conversation-ID`、
+`X-Conversation-Request-ID`、`X-Conversation-Message-ID`，不修改账号凭据或提示词。
+测试检查三个头非空、同次一致、跨请求不同。实际恢复情况需部署后验证。
+
 ### 9.20 保留面板运行时变量（2026-10-26）
 
 Wrangler 默认会删除配置文件未声明的面板普通变量；此前线上 `API_KEY` 是普通文本绑定。
