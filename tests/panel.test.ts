@@ -871,6 +871,35 @@ test('🔴 账号卡片必须支持单独停用/启用，且按钮在「删除�
     '删除仍应是 danger 样式')
 })
 
+test('删除账号按实际分片发送请求，取消确认时不删除', async () => {
+  const js = panelAsset('/panel/app.js')?.body ?? ''
+  const start = js.indexOf('del.onclick = async () => {')
+  const end = js.indexOf('card.appendChild(del)', start)
+  assert.ok(start >= 0 && end > start, '删除回调必须存在')
+  const handler = js.slice(start, end)
+  for (const realm of ['global', 'cn', undefined]) {
+    for (const confirmed of [true, false]) {
+      const calls: Array<{ path: string; body: Record<string, unknown> }> = []
+      const del: { onclick?: () => Promise<void> } = {}
+      const account = { uid: 'workbuddy:test-account', realm }
+      const noop = () => {}
+      new Function('del', 'a', 'confirm', 'api', 'alert',
+        'loadModalAccounts', 'loadAccounts', 'loadPool', handler)(
+        del, account, () => confirmed,
+        async (path: string, options: { body: string }) => {
+          calls.push({ path, body: JSON.parse(options.body) })
+          return { ok: true }
+        }, noop, noop, noop, noop,
+      )
+      await del.onclick!()
+      assert.deepEqual(calls, confirmed ? [{
+        path: '/admin/accounts/remove',
+        body: { uid: account.uid, realm: realm ?? 'cn', confirm: true },
+      }] : [])
+    }
+  }
+})
+
 test('⚠️ 每个账号卡片必须单独显示积分，且**不得阻塞账号列表**', () => {
   // ## 用户两条反馈（先后）
   //

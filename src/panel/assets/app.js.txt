@@ -1905,7 +1905,7 @@ async function loadModalAccounts() {
       if (!confirm('删除账号 ' + a.uid + '（含凭据）？不可恢复。')) return
       const r = await api('/admin/accounts/remove', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ uid: a.uid, realm: 'cn', confirm: true }),
+        body: JSON.stringify({ uid: a.uid, realm: a.realm || 'cn', confirm: true }),
       })
       if (!r.ok) alert('删除失败：' + JSON.stringify(r.body))
       loadModalAccounts(); loadAccounts(); loadPool()
