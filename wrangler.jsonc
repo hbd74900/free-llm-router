@@ -27,6 +27,9 @@
    * Worker（新 DO 存储 ⇒ 账号全「消失」）。改名请在网页端做，然后同步这里。
    */
   "name": "free-llm-router",
+  // 保留在 Cloudflare 面板设置的普通变量，避免自动部署时删除。
+  // API_KEY 与 CREDENTIAL_KEY 仍应设置为 Secret，绝不要把密钥提交到仓库。
+  "keep_vars": true,
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
 

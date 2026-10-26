@@ -71,6 +71,18 @@ curl -X PUT -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/j
 **用自定义域 API 不需要 DNS 写权限** —— Cloudflare 会自动创建对应的 DNS 记录。
 （本项目 token 没有 DNS 权限，用 `routes` 配置时就得手工建 DNS；用自定义域 API 则不需要。）
 
+## 面板添加的变量在部署后消失
+
+Wrangler 默认以配置文件为准，会删除面板中额外添加的普通变量。本项目已设置
+`keep_vars: true`，自动部署时保留这些变量；配置文件中同名的 `vars` 仍以配置值为准。
+
+`API_KEY` 和 `CREDENTIAL_KEY` 请在 Worker → Settings → Variables and Secrets
+中选择 **Secret** 类型添加，不要选择普通文本，也不要只填在构建环境变量中。
+Secret 正常情况下会跨 Wrangler 部署保留，不需要把值写入仓库。
+
+已经丢失的变量需要重新添加。`CREDENTIAL_KEY` 应恢复原值，否则原有加密凭据解密失败；
+若原值已丢失，设置新密钥后需重新登录账号。
+
 ## secret 说明
 
 | secret | 用途 | 未设置的后果 |
