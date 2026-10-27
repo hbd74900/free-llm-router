@@ -266,11 +266,27 @@ export function toChatBody(body: ResponsesRequest, model: string): Record<string
         if (callId === undefined || name === undefined) {
           throw new ResponsesError('function_call requires call_id and name')
         }
-        messages.push({
-          role: 'assistant',
-          content: '',
-          tool_calls: [{ id: callId, type: 'function', function: { name, arguments: args } }],
-        })
+        // ⚠️ 并行的多个 `function_call` 必须合并进**同一条** assistant 消息。
+        //
+        // Codex 一次会连发多条 `function_call`（各自是一个独立 item），
+        // 再按顺序跟上对应的 `function_call_output`。逐条生成 assistant 消息会得到
+        // [assistant(调用A), assistant(调用B), tool(A), tool(B)]，
+        // 而 tool(A) 紧跟在「只声明了 B」的消息后面 —— 上游判为
+        // `11148 tool calls and tool results do not match`（2026-10-27 实测）。
+        const call = { id: callId, type: 'function', function: { name, arguments: args } }
+        const last = messages.length === 0
+          ? undefined
+          : (messages[messages.length - 1] as Record<string, unknown>)
+        if (last !== undefined && last.role === 'assistant') {
+          // 紧邻的 assistant 正文也合并：OpenAI 规范里正文与工具调用同属一条消息。
+          if (Array.isArray(last.tool_calls)) {
+            (last.tool_calls as unknown[]).push(call)
+          } else {
+            last.tool_calls = [call]
+          }
+        } else {
+          messages.push({ role: 'assistant', content: '', tool_calls: [call] })
+        }
         continue
       }
       if (type === 'function_call_output') {

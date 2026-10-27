@@ -102,6 +102,66 @@ test('⚠️ 工具调用的历史（function_call / function_call_output）必�
   assert.equal(tool.content, '晴')
 })
 
+test('🔴 并行的多个 `function_call` 必须合并进同一条 assistant 消息', () => {
+  // Codex 一次会连发多条 function_call，再按顺序跟上各自的 output。
+  // 逐条生成 assistant 消息会让第一个 tool 结果紧跟一条「只声明了第二个调用」的消息，
+  // 上游直接回 11148 tool calls and tool results do not match（2026-10-27 实测）。
+  const chat = toChatBody({
+    input: [
+      { role: 'user', content: '看两个文件' },
+      { type: 'function_call', call_id: 'call_A', name: 'exec_command', arguments: '{"cmd":"a"}' },
+      { type: 'function_call', call_id: 'call_B', name: 'exec_command', arguments: '{"cmd":"b"}' },
+      { type: 'function_call_output', call_id: 'call_A', output: 'A 的结果' },
+      { type: 'function_call_output', call_id: 'call_B', output: 'B 的结果' },
+    ],
+  }, 'm')
+  const msgs = chat.messages as Array<Record<string, unknown>>
+  assert.equal(msgs.length, 4, '⚠️ 两条调用必须落在同一条 assistant 消息里')
+  const asst = msgs[1]!
+  assert.equal(asst.role, 'assistant')
+  const calls = asst.tool_calls as Array<Record<string, unknown>>
+  assert.equal(calls.length, 2)
+  assert.deepEqual(calls.map((c) => c.id), ['call_A', 'call_B'])
+  assert.equal(msgs[2]!.tool_call_id, 'call_A')
+  assert.equal(msgs[3]!.tool_call_id, 'call_B')
+})
+
+test('⚠️ 紧邻的 assistant 正文与工具调用合并成一条消息', () => {
+  const chat = toChatBody({
+    input: [
+      { role: 'user', content: 'hi' },
+      { type: 'message', role: 'assistant', content: '我先看看' },
+      { type: 'function_call', call_id: 'call_1', name: 'f', arguments: '{}' },
+      { type: 'function_call_output', call_id: 'call_1', output: 'ok' },
+    ],
+  }, 'm')
+  const msgs = chat.messages as Array<Record<string, unknown>>
+  assert.equal(msgs.length, 3)
+  assert.equal(msgs[1]!.role, 'assistant')
+  assert.equal(msgs[1]!.content, '我先看看')
+  assert.equal((msgs[1]!.tool_calls as unknown[]).length, 1)
+})
+
+test('⚠️ 两轮工具调用不能被合并成一条 assistant 消息', () => {
+  const chat = toChatBody({
+    input: [
+      { role: 'user', content: '两步' },
+      { type: 'function_call', call_id: 'call_A', name: 'f', arguments: '{}' },
+      { type: 'function_call_output', call_id: 'call_A', output: '1' },
+      { type: 'function_call', call_id: 'call_B', name: 'f', arguments: '{}' },
+      { type: 'function_call_output', call_id: 'call_B', output: '2' },
+    ],
+  }, 'm')
+  const msgs = chat.messages as Array<Record<string, unknown>>
+  assert.equal(msgs.length, 5)
+  assert.equal(msgs[1]!.role, 'assistant')
+  assert.equal(msgs[2]!.role, 'tool')
+  assert.equal(msgs[3]!.role, 'assistant')
+  assert.equal(msgs[4]!.role, 'tool')
+  assert.equal((msgs[1]!.tool_calls as unknown[]).length, 1)
+  assert.equal((msgs[3]!.tool_calls as unknown[]).length, 1)
+})
+
 test('⚠️ `function_call` 缺 call_id 时回落到 `id`', () => {
   // 参考实现（responses.ts:490-492）：`call_id` 才是配对 id，`id`（fc_…）只是
   // item 身份。两者都可能出现，优先 call_id，缺了才退回 id。

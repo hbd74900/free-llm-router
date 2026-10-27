@@ -3116,6 +3116,47 @@ auth server could not be reached`。**不是登录失效**（凭据未变），�
 响应，会明确报 502 `upstream_error` 并附上游原文片段。
 （唯一的例外是**只调用工具**的响应 —— 那时正文本来就是空的。）
 
+### 9.23 11128 定位到提示词指纹 + 并行工具调用 11148（2026-10-27）
+
+#### a. 11128 是**提示词内容**指纹，与账号/模型无关
+
+- **Codex**：内置 base instructions 的**首段**命中 ⇒ `11128`。客户端修法是把 21 KB
+  的默认指令复制一份，**只改首段**（其余逐字保留），再用
+  `model_instructions_file` 指过去。删掉该配置立即复现 11128。
+- **Claude Code**：触发点是首条 system message 末尾自动生成的 **`gitStatus` 块**
+  （450 字符）。实测：整块移除稳定 **200**，保留稳定 **11128**（各慢速复测两次）。
+  块内 `Main branch (you will usually use this for PRs): master` 单独发送即触发；
+  把 `master` 改成 `main` 后该行不再触发，但**整个块仍触发** ⇒ 块内存在多处指纹，
+  逐行豁免不现实，只能整块挪走。
+- 客户端修法：`claude --exclude-dynamic-system-prompt-sections`
+  （把 cwd / 环境 / git 状态移入**首条 user 消息**，内容不丢）。
+  已落到 PowerShell profile 的 `claude` 包装函数。
+- ⚠️ 该参数**没有** settings.json / 环境变量等价物（对 `claude.exe` 全量字符串搜索
+  确认只有 CLI 选项）。未加载 profile 的 shell（cmd、git-bash、IDE 扩展）
+  仍会 11128，需要在那些入口自己加参数。
+
+#### b. 🔴 并行 `function_call` 被拆成多条 assistant 消息 ⇒ 上游 11148
+
+Codex 一轮会连发多条 `function_call`，再按顺序跟上各自的 `function_call_output`。
+`toChatBody` 原先**逐条**生成 assistant 消息：
+
+```
+[assistant(声明 call_A), assistant(声明 call_B), tool(call_A), tool(call_B)]
+```
+
+⇒ `tool(call_A)` 紧跟在「只声明了 call_B」的消息后面 ⇒ 上游回
+`11148 tool calls and tool results do not match, please start a new conversation`
+（会话 `01a17bcc…` 实测，累积 15.9K tokens 后必现）。
+
+修法：相邻的 `function_call` **合并进同一条 assistant 消息**（紧邻的 assistant 正文
+一并合并，符合 OpenAI 规范里「正文与工具调用同属一条消息」）。用该会话的真实
+response_item 回放验证：输出 `assistant calls=[call_00,call_01]` + 两条按序 tool 消息。
+新增 3 条单测（并行合并 / 正文合并 / 跨轮不合并）。
+
+⚠️ 该缺陷只在**并行调用**时出现；单调用一轮的动作一直正常，故长期未被发现。
+⚠️ 该会话末尾还有一条 Codex 的 `developer`（`Approved command prefix saved`），
+按既有逻辑会转成 `system` 排在 tool 结果之后，上游是否接受需部署后观察。
+
 ### 9.22 Codex 请求拒绝不应熔断账号（2026-10-26）
 
 真实 Codex 请求复现 `11128 unapproved channel`；同样工具定义配简短输入成功。
